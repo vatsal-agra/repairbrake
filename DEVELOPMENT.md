@@ -6,7 +6,7 @@ This file is the process. Do not skip gates.
 
 ## Gates (hard)
 
-1. **No UI** until `scripts/spike_partial_capture.py` prints a real sandbox capture id for an amount **less than** the authorization, then voids or leaves the rest uncaptured.
+1. **No live PayPal claims** until `scripts/spike_partial_capture.py` prints a real sandbox capture id for an amount **less than** the authorization. The web demo may run on `MockPayments` (ids always `MOCK-`). Do not present MOCK ids as sandbox captures.
 2. **No production code** without a failing test first (TDD). Exception: this DEVELOPMENT.md, LICENSE, `.env.example`.
 3. **No PayPal secrets** in git. `.env` is gitignored. CI uses GitHub secrets later.
 4. **No second hackathon idea** until a 3-minute demo path exists: quote → bill → split → capture id on screen.
