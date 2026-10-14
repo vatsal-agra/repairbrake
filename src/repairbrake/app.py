@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from repairbrake.job import Job, JobStore
-from repairbrake.payments import MockPayments
+from repairbrake.payments import payments_from_env
 from repairbrake.quote import QuoteError
 
-STORE = JobStore(payments=MockPayments())
+STORE = JobStore(payments=payments_from_env())
 
 
 class CreateJob(BaseModel):
@@ -25,10 +25,12 @@ def _job_json(job: Job) -> dict:
         "id": job.id,
         "authorized_cents": job.authorized_cents,
         "bill_text": job.bill_text,
+        "order_id": job.order_id,
+        "approve_url": job.approve_url,
         "authorization_id": job.authorization_id,
         "captured": job.captured,
         "capture_id": job.capture_id,
-        "mock": job.authorization_id.startswith("MOCK-"),
+        "mock": (job.authorization_id or job.order_id or "").startswith("MOCK-"),
         "lines": [
             {"name": line.name, "amount_cents": line.amount_cents, "consented": line.consented}
             for line in job.lines
@@ -58,6 +60,18 @@ def create_app(store: JobStore | None = None) -> FastAPI:
         except QuoteError as e:
             raise HTTPException(409, str(e)) from e
         return _job_json(job)
+
+    @app.get("/return")
+    def paypal_return(token: str):
+        try:
+            jobs.complete_order(token)
+        except KeyError:
+            raise HTTPException(404, "unknown PayPal order") from None
+        return RedirectResponse("/?paypal=authorized")
+
+    @app.get("/cancel")
+    def paypal_cancel():
+        return RedirectResponse("/?paypal=cancel")
 
     @app.post("/api/jobs/{job_id}/capture")
     def capture(job_id: str) -> dict:
@@ -108,7 +122,7 @@ INDEX_HTML = """<!doctype html>
 <main>
   <h1>RepairBrake</h1>
   <p class="sub">The quote is the only money that can be captured. Extras stay on hold until you tap yes.</p>
-  <div class="warn" id="mode">Mock payments. Capture ids start with MOCK- until sandbox keys are in .env.</div>
+  <div class="warn" id="mode">Sandbox keys load from .env. If PayPal Checkout opens, log in with a sandbox personal account. MOCK- ids mean the mock adapter.</div>
   <label>Authorized cap (USD)
     <input id="cap" value="138.00" />
   </label>
@@ -150,6 +164,11 @@ $('split').onclick = async () => {
   });
   job = await r.json();
   render();
+  if (job.approve_url) {
+    $('out').textContent = 'Opening PayPal to authorize the cap...';
+    location.href = job.approve_url;
+    return;
+  }
   $('out').textContent = 'Authorized ' + job.authorization_id;
 };
 $('go').onclick = async () => {

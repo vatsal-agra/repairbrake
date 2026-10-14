@@ -14,7 +14,9 @@ class Job:
     authorized_cents: int
     bill_text: str
     lines: list[Line]
-    authorization_id: str
+    order_id: str
+    approve_url: str | None
+    authorization_id: str | None
     captured: bool = False
     capture_id: str | None = None
 
@@ -31,22 +33,31 @@ class JobStore:
     def __init__(self, payments: Payments):
         self._payments = payments
         self._jobs: dict[str, Job] = {}
+        self._by_order: dict[str, str] = {}
 
-    def create(self, authorized_cents: int, bill_text: str) -> Job:
+    def create(self, authorized_cents: int, bill_text: str, return_url: str = "http://127.0.0.1:8766/return", cancel_url: str = "http://127.0.0.1:8766/cancel") -> Job:
         lines = parse_bill(bill_text)
-        auth = self._payments.authorize(authorized_cents)
+        start = self._payments.start_cap(authorized_cents, return_url, cancel_url)
         job = Job(
             id=str(uuid.uuid4()),
             authorized_cents=authorized_cents,
             bill_text=bill_text,
             lines=lines,
-            authorization_id=auth,
+            order_id=start.order_id,
+            approve_url=start.approve_url,
+            authorization_id=start.authorization_id,
         )
         self._jobs[job.id] = job
+        self._by_order[job.order_id] = job.id
         return job
 
     def get(self, job_id: str) -> Job:
         return self._jobs[job_id]
+
+    def complete_order(self, order_id: str) -> Job:
+        job = self._jobs[self._by_order[order_id]]
+        job.authorization_id = self._payments.complete_cap(order_id)
+        return job
 
     def set_consent(self, job_id: str, index: int, consented: bool) -> Job:
         job = self._jobs[job_id]
@@ -58,6 +69,8 @@ class JobStore:
 
     def capture(self, job_id: str) -> CaptureResult:
         job = self._jobs[job_id]
+        if not job.authorization_id:
+            raise QuoteError("cap is not authorized yet")
         quote = Quote(job.authorized_cents, list(job.lines))
         amount = quote.capture_cents()
         cap_id = self._payments.capture(job.authorization_id, amount)

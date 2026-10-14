@@ -19,7 +19,9 @@ Capture ids start with `MOCK-` until sandbox Client ID/Secret are in `.env`.
 
 ## Status
 
-Quote math, bill parse, consent, mock capture, one-screen demo: tested. Live partial-capture spike waits on sandbox credentials.
+Quote math, bill parse, consent, mock capture, one-screen demo: tested.
+
+Live sandbox: OAuth works. Card processing is not enabled on this app, so the cap is authorized via **PayPal Checkout** (sandbox personal account), then consented lines are partial-captured. `.env` is local only.
 
 ## License
 
